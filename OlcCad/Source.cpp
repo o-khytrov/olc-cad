@@ -36,6 +36,18 @@ struct sShape
 		return &vecNodes[vecNodes.size() - 1];
 	}
 
+	sNode* HitNode(olc::vf2d& p)
+	{
+		for (auto& n : vecNodes)
+		{
+			if ((p - n.pos).mag() < 0.01f)
+			{
+				return &n;
+			}
+		}
+		return nullptr;
+	}
+
 	void DrawNodes(olc::PixelGameEngine* pge)
 	{
 		for (auto& n : vecNodes)
@@ -67,6 +79,86 @@ struct sLine :public sShape
 		pge->DrawLine(sx, sy, ex, ey, col);
 	}
 };
+
+struct sBox : public sShape
+{
+	sBox()
+	{
+		nMaxNodes = 2;
+		vecNodes.reserve(nMaxNodes);
+	}
+
+	void DrawYourself(olc::PixelGameEngine* pge) override
+	{
+		int sx, sy, ex, ey;
+		WorldToScreen(vecNodes[0].pos, sx, sy);
+		WorldToScreen(vecNodes[1].pos, ex, ey);
+		pge->DrawRect(sx, sy, ex - sx, ey - sy, col);
+	}
+};
+
+struct sCircle : public sShape
+{
+	sCircle()
+	{
+		nMaxNodes = 2;
+		vecNodes.reserve(nMaxNodes);
+	}
+
+	void DrawYourself(olc::PixelGameEngine* pge) override
+	{
+		float fRadius = (vecNodes[0].pos - vecNodes[1].pos).mag();
+		int sx, sy, ex, ey;
+		WorldToScreen(vecNodes[0].pos, sx, sy);
+		WorldToScreen(vecNodes[1].pos, ex, ey);
+		pge->DrawLine(sx, sy, ex, ey, col, 0xFF00FF00);
+		pge->DrawCircle(sx, sy, fRadius * fWorldScale, col);
+	}
+};
+
+struct sCurve : public sShape
+{
+	sCurve()
+	{
+		nMaxNodes = 3;
+		vecNodes.reserve(nMaxNodes);
+	}
+
+	void DrawYourself(olc::PixelGameEngine* pge) override
+	{
+		int sx, sy, ex, ey;
+		if (vecNodes.size() < 3)
+		{
+			WorldToScreen(vecNodes[0].pos, sx, sy);
+			WorldToScreen(vecNodes[1].pos, ex, ey);
+			pge->DrawLine(sx, sy, ex, ey, col, 0xFF00FF00);
+		}
+		
+		if (vecNodes.size() == 3)
+		{
+			WorldToScreen(vecNodes[0].pos, sx, sy);
+			WorldToScreen(vecNodes[1].pos, ex, ey);
+			pge->DrawLine(sx, sy, ex, ey, col, 0xFF00FF00);
+
+			WorldToScreen(vecNodes[1].pos, sx, sy);
+			WorldToScreen(vecNodes[2].pos, ex, ey);
+			pge->DrawLine(sx, sy, ex, ey, col, 0xFF00FF00);
+
+			olc::vf2d op = vecNodes[0].pos;
+			olc::vf2d np = op;
+			for (float t = 0; t < 1.0f; t += 0.01f)
+			{
+				np = (1 - t) * (1 - t) * vecNodes[0].pos + 2 * (1 - t) * t * vecNodes[1].pos + t * t * vecNodes[2].pos;
+				WorldToScreen(op, sx, sy);
+				WorldToScreen(np, ex, ey);
+				pge->DrawLine(sx, sy, ex, ey, col);
+				op = np;
+			}
+		}
+
+	
+	}
+};
 class Editor : public olc::PixelGameEngine
 {
 public:
@@ -79,8 +171,8 @@ private:
 	olc::vf2d vStartPan = { 0.0f,0.0f };
 	float fScale = 10.f;
 	float fGrid = 1.0f;
-	sLine* tempShape = nullptr;
-	std::list<sLine*> listShapes;
+	sShape* tempShape = nullptr;
+	std::list<sShape*> listShapes;
 	sNode* selectedNode = nullptr;
 	olc::vf2d vCursor{ 0,0 };
 	void WorldToScreen(const olc::vf2d& v, int& nScreenX, int& nScreenY)
@@ -128,6 +220,17 @@ public:
 		{
 			fScale *= 0.9f;
 		}
+
+		if (GetKey(olc::Key::M).bPressed)
+		{
+			selectedNode = nullptr;
+			for (auto& shape : listShapes)
+			{
+				selectedNode = shape->HitNode(vCursor);
+				if (selectedNode != nullptr)
+					break;
+			}
+		}
 		olc::vf2d vMouseAfterZoom;
 		ScreenToWorld((int)vMouse.x, (int)vMouse.y, vMouseAfterZoom);
 		vOffset += (vMouseBeforeZoom - vMouseAfterZoom);
@@ -164,6 +267,24 @@ public:
 			selectedNode = tempShape->GetNextNode(vCursor);
 		}
 
+		if (GetKey(olc::Key::B).bPressed)
+		{
+			tempShape = new sBox();
+			selectedNode = tempShape->GetNextNode(vCursor);
+			selectedNode = tempShape->GetNextNode(vCursor);
+		}
+		if (GetKey(olc::Key::C).bPressed)
+		{
+			tempShape = new sCircle();
+			selectedNode = tempShape->GetNextNode(vCursor);
+			selectedNode = tempShape->GetNextNode(vCursor);
+		}
+		if (GetKey(olc::Key::S).bPressed)
+		{
+			tempShape = new sCurve();
+			selectedNode = tempShape->GetNextNode(vCursor);
+			selectedNode = tempShape->GetNextNode(vCursor);
+		}
 		if (selectedNode != nullptr)
 		{
 			selectedNode->pos = vCursor;
@@ -197,7 +318,7 @@ public:
 		sShape::fWorldScale = fScale;
 		sShape::vWorldOffset = vOffset;
 
-		for (auto &shape: listShapes )
+		for (auto& shape : listShapes)
 		{
 			shape->DrawYourself(this);
 			shape->DrawNodes(this);
